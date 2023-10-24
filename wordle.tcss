@@ -1,0 +1,43 @@
+Charbox {
+    padding: 0 1;
+    border: solid gray;
+    width: 5;
+    margin: 0 0;
+}
+
+Charbox.correct {
+    background: $success 80%;
+}
+
+
+Charbox.maybe {
+    background: yellow 70%;
+}
+
+Charbox.incorrect {
+    background: grey 50%;
+}
+
+Word {
+    layout: horizontal;
+    align: center middle;
+    margin: 1 0;
+}
+
+.active Charbox {
+    border: solid white;
+}
+
+
+.word-box {
+    align: center middle;
+    height: auto;
+}
+
+Keyboard {
+    height: 9;
+}
+
+Keyboard Horizontal {
+    align: center middle;
+}
