@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from string import ascii_letters
+import random
+from enum import Enum
 
 from textual.app import App, ComposeResult
 from textual.message import Message
@@ -10,12 +12,37 @@ from textual.widgets import Button, Input, Label, Static
 
 
 
-class Charbox(Label):
-    
-    def on_click(self, event):
-         print(self.classes)
-    
 
+
+class Keyboard(Container):
+
+    def compose(self) -> ComposeResult:
+        with Horizontal():
+            for char in 'QWERTYUIOP':
+                yield Charbox(char, id=char)
+        with Horizontal():
+            for char in 'ASDFGHJKL':
+                yield Charbox(char, id=char)
+        with Horizontal():
+            for char in 'ZXCVBNM':
+                yield Charbox(char, id=char)
+
+    def update_chars(self, hints):
+
+        for char, hint in hints:
+            charbox = self.query_one(f"Charbox#{char}")
+            current = [k for k in hint.__class__ if k.name in charbox.classes]
+            if not current:
+                charbox.add_class(hint.name)
+                continue
+            current = current[0]
+            if  hint.value > current.value:
+                charbox.remove_class(current.name)
+                charbox.add_class(hint.name)
+
+
+class Charbox(Label):
+    pass
 
 class Word(Static):
 
@@ -69,42 +96,11 @@ class Word(Static):
 
     def update_chars(self, classes:list[str]):
         for char, cls in zip(self.charboxes, classes):
-            if cls: char.add_class(cls)
+            if cls: char.add_class(cls.name)
 
     # def on_click(self, event):
     #     print(self.classes)
     #     self.refresh()s
-
-
-class Keyboard(Container):
-
-    def compose(self) -> ComposeResult:
-        with Horizontal():
-            for char in 'QWERTYUIOP':
-                yield Charbox(char, id=char)
-        with Horizontal():
-            for char in 'ASDFGHJKL':
-                yield Charbox(char, id=char)
-        with Horizontal():
-            for char in 'ZXCVBNM':
-                yield Charbox(char, id=char)
-
-    def update_chars(self, classes):
-        clsval = {
-            'incorrect':1,
-            'maybe':2,
-            'correct':3,
-        }
-        for char, cls in classes:
-            box = self.query_one(f"Charbox#{char}")
-            current = [k for k in clsval if k in box.classes]
-            if not current:
-                box.add_class(cls)
-                return
-            current = current[0]
-            if  clsval[cls] > clsval[current]:
-                box.remove_class(current)
-                box.add_class(cls)
 
 
 class WordleApp(App[None]):
@@ -114,9 +110,33 @@ class WordleApp(App[None]):
     WORDS = 6
     LETTERS = 5
 
-    SECRET = 'FOCUS'
+    WORDS_FILE = 'words.txt'
 
     active_word = None
+
+    class Hint(Enum):
+        incorrect = 1
+        maybe = 2
+        correct = 3
+
+    class State(Enum):
+        INPLAY = 1
+        WIN = 2
+        LOSE = 3
+
+    async def on_mount(self) -> None:
+        await self.read_from_file(self.WORDS_FILE)
+
+    async def read_from_file(self, path:str) -> None:
+        """Import valid words from file."""
+        try:
+            with open(path, "r") as f:
+                self.VALID_WORDS = [w.strip() for w in f.readlines()]
+                self.SECRET = random.choice(self.VALID_WORDS)
+                print(self.SECRET)
+        except FileNotFoundError:
+            self.exit()
+
 
     def compose(self) -> ComposeResult:
 
@@ -141,24 +161,35 @@ class WordleApp(App[None]):
         self.words[self.active_word].handle_key_press(event)
 
     def on_word_submitted(self, event: Word.Submitted):
-        classes = self.evaluate_word(event.word)
+
+        guess = event.word
+        if guess not in self.VALID_WORDS:
+            self.notify("Not in word list", severity="error")
+            return            
+
+        classes = self.evaluate_word(guess)
         self.words[self.active_word].update_chars(classes)
-        self.keyboard.update_chars(zip(event.word, classes))
+        self.keyboard.update_chars(zip(guess, classes))
+
+        if guess == self.SECRET:
+            print(f"Congratulations! you win in {self.active_word + 1} tries")
+            return
+
         self.activate_word(self.active_word + 1)
 
     def evaluate_word(self, guess: str):
 
-        classes = ["incorrect" for _ in guess]
+        classes = [self.Hint.incorrect for _ in guess]
         secret_left = []
 
         for i, (s,g) in enumerate(zip(self.SECRET, guess)):
             if s==g:
-                classes[i] = "correct"
+                classes[i] = self.Hint.correct
             else:
                 secret_left.append(s)
         for i, g in enumerate(guess):
-            if classes[i] == "incorrect" and g in secret_left:
-                classes[i] = "maybe"
+            if classes[i] == self.Hint.incorrect and g in secret_left:
+                classes[i] = self.Hint.maybe
                 secret_left.remove(g)
 
         return classes
