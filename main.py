@@ -7,11 +7,41 @@ from enum import Enum
 from textual.app import App, ComposeResult
 from textual.message import Message
 from textual import events
-from textual.containers import Vertical, Horizontal, Container
-from textual.widgets import Button, Input, Label, Static
+from textual.screen import ModalScreen
+from textual.containers import Vertical, Horizontal, Container, Grid
+from textual.widgets import Button, Label, Static
 
 
+class EndScreen(ModalScreen):
+    """Screen with a dialog to quit."""
 
+    label = Label("", id="message")
+
+    class Reset(Message):
+        pass
+
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            self.label,
+            Button("Play again", variant="primary", id="cancel"),
+            Button("Quit", variant="error", id="quit"),
+            id="dialog",
+        )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "quit":
+            self.app.exit()
+        else:
+            # self.post_message(self.Reset)
+            self.app.pop_screen()
+
+    def set_win_text(self, attempts):
+        text = f"Congratulations! You won on {attempts} attempts."
+        self.label.update(text)
+
+    def set_lose_text(self):
+        text = f"You lose!"
+        self.label.update(text)
 
 
 class Keyboard(Container):
@@ -106,13 +136,10 @@ class Word(Static):
 class WordleApp(App[None]):
 
     CSS_PATH='wordle.tcss'
+    WORDS_FILE = 'words.txt'
 
     WORDS = 6
     LETTERS = 5
-
-    WORDS_FILE = 'words.txt'
-
-    active_word = None
 
     class Hint(Enum):
         incorrect = 1
@@ -124,36 +151,33 @@ class WordleApp(App[None]):
         WIN = 2
         LOSE = 3
 
-    async def on_mount(self) -> None:
-        await self.read_from_file(self.WORDS_FILE)
 
-    async def read_from_file(self, path:str) -> None:
+    def read_from_file(self, path:str) -> None:
         """Import valid words from file."""
         try:
             with open(path, "r") as f:
                 self.VALID_WORDS = [w.strip() for w in f.readlines()]
-                self.SECRET = random.choice(self.VALID_WORDS)
-                print(self.SECRET)
         except FileNotFoundError:
             self.exit()
 
 
-    def compose(self) -> ComposeResult:
-
-        self.words = [Word(self.LETTERS) for _ in range(self.WORDS)]
-        self.keyboard = Keyboard()
-        self.activate_word(0)
-        
+    def compose(self) -> ComposeResult:       
+        self.reset()
         with Vertical(classes='word-box'):
             for word in self.words:
                 yield word
         
         yield self.keyboard
 
+    def reset(self):
+            self.read_from_file(self.WORDS_FILE)
+            self.state = self.State.INPLAY
+            self.SECRET = random.choice(self.VALID_WORDS)
+            self.words = [Word(self.LETTERS) for _ in range(self.WORDS)]
+            self.keyboard = Keyboard()
+            self.activate_word(0)
+
     def activate_word(self, index: int) -> None:
-        if self.active_word == self.WORDS -1:
-            # self.exit()
-            return
         self.active_word = index
         self.words[index].add_class('active')
         
@@ -172,10 +196,15 @@ class WordleApp(App[None]):
         self.keyboard.update_chars(zip(guess, classes))
 
         if guess == self.SECRET:
-            print(f"Congratulations! you win in {self.active_word + 1} tries")
-            return
+            return self.win()
 
+        if self.active_word == self.WORDS - 1:
+            return self.lose()
+        
         self.activate_word(self.active_word + 1)
+
+    def on_endscreen_reset(self, event):
+        self.reset()
 
     def evaluate_word(self, guess: str):
 
@@ -193,6 +222,18 @@ class WordleApp(App[None]):
                 secret_left.remove(g)
 
         return classes
+    
+    def win(self):
+        self.state = self.State.WIN
+        winscreen = EndScreen()
+        winscreen.set_win_text(self.active_word+1)
+        self.push_screen(winscreen)
+
+    def lose(self):
+        self.state = self.State.LOSE
+        losescreen = EndScreen()
+        losescreen.set_lose_text()
+        self.push_screen(losescreen)
 
 app = WordleApp()
 
